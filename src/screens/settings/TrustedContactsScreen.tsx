@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, Alert } from 'react-native';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import supabase from '../../config/supabase';
-import { addTrustedContact, toggleAutoShare, removeTrustedContact, updateTrustedContact } from '../../services/contactService';
+import { addTrustedContact, toggleAutoShare, removeTrustedContact, updateTrustedContact, setPrimaryContact } from '../../services/contactService';
 import ContactCard from '../../components/ContactCard';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
@@ -22,6 +22,7 @@ function toTrustedContact(row: Record<string, unknown>): TrustedContact {
     autoShare: Boolean(row.auto_share),
     status: (row.status as TrustedContact['status']) ?? 'pending',
     isSystemContact: Boolean(row.is_system_contact),
+    priority: (row.priority as TrustedContact['priority']) ?? 'secondary',
   };
 }
 
@@ -193,6 +194,17 @@ export default function TrustedContactsScreen({ navigation }: any) {
           onToggleAutoShare={(v) => toggleAutoShare(item.id, v)}
           onEdit={() => startEdit(item)}
           onRemove={() => handleRemove(item.id, item.name)}
+          onSetPrimary={async () => {
+            try {
+              await setPrimaryContact(item.id);
+              // Refresh priorities optimistically.
+              setContacts((prev) =>
+                prev.map((c) => ({ ...c, priority: c.id === item.id ? 'primary' : 'secondary' })),
+              );
+            } catch (err: any) {
+              Alert.alert('Could not set primary contact', err.message);
+            }
+          }}
         />
       )}
       ListEmptyComponent={<EmptyState icon="people-outline" title="No trusted contacts yet" body="Add the people you want notified during an SOS or a missed check-in." />}

@@ -164,7 +164,8 @@ safeyou-campus/                     ◄── open THIS in VS Code
     │   ├── 0003_security_functions.sql  # trigger_sos/resolve_sos, moderation, rate limits
     │   ├── 0004_admin_functions.sql     # campus-security console RPCs
     │   ├── 0005_auth_trigger.sql        # auto-provision users row on signup
-    │   └── 0006_flow_completion.sql     # SOS incident type, offline_events, heartbeat RPC
+    │   ├── 0006_flow_completion.sql     # SOS incident type, offline_events, heartbeat RPC
+    │   └── 0007_sos_selection.sql       # SOS contact selection, lifecycle, priority, SMS flag
     └── functions/                  # Deno Edge Functions
         ├── _shared/auth.ts         # webhook-secret guard + fail-closed key helpers
         ├── sos-fanout/             # onCreate(sos_events) → notify contacts + security
@@ -223,10 +224,10 @@ location are never exposed across users.
 | `trusted_contacts` | `user_id` → contact (name, phone, `linked_uid`, `is_system_contact`) | owner writes; owner / linked user / security reads |
 | `journeys` | Walk-With-Me trip (dest, ETA, `auto_sos_at`, `shared_with_contact_ids`) | owner / shared contacts / security read; owner insert/update |
 | `journey_pings` | breadcrumb trail (`journey_id`, lat/lng, speed) | viewers read; **only the journey owner inserts** |
-| `sos_events` | SOS record (incl. `incident_type`) | owner/security read; **no client insert/update** — go through `trigger_sos`/`resolve_sos` |
+| `sos_events` | SOS record (`incident_type`, `target_contact_ids`, `alert_sent_at`, `acknowledged_*`) | owner/security read; **no client insert/update** — go through the SOS RPCs |
 | `offline_events` | persisted offline detection (location + last active time) | owner/security read; service_role write |
 | `incidents` | report (`reporter_id`, `is_anonymous`, type, desc, media) | reporter/security read; insert scoped to reporter (or null for anon) + rate limit |
-| `risk_zones` | aggregated heatmap (`center_lat/lng`, `radius_meters`, `risk_score`, `incident_count`) | public read; service_role write |
+| `risk_zones` | aggregated heatmap (`center_lat/lng`, `radius_meters`, `risk_score`, `incident_count`, `incident_types`) | public read; service_role write |
 | `webhook_events` | idempotency dedup for `pg_net` retries | no client access |
 
 The full SQL (with every policy and helper function) is in
@@ -270,11 +271,15 @@ Defines the `safeyou-location-heartbeat` background task and writes
 
 ### 8.3 SOS — `src/services/sosService.ts` + `src/components/SOSButton.tsx`
 
-The SOS button requires a 3-second hold, then calls `supabase.rpc('trigger_sos', …)`. The RPC
-(`0003_security_functions.sql`) inserts the `sos_events` row **and** flips `users.current_status`
-to `sos` in one transaction, enforces a 30s per-user cooldown, and dedupes active SOS. A Postgres
-trigger fires `sos-fanout`, which pushes to trusted contacts **and** campus security.
-`resolveSOS` calls `resolve_sos`, which marks the event resolved and restores `current_status`.
+The SOS button requires a 3-second hold, then shows a **5-second cancellation countdown** before
+sending. SOS is created through `trigger_sos` (atomic insert + status update + 30s cooldown +
+dedup) and carries an **incident type** and the **selected trusted contact(s)** — only those
+contacts are notified (never the whole list by default). The lifecycle is
+**Active → Alert Sent → Acknowledged → Resolved/Cancelled**, driven by
+`acknowledge_sos` / `resolve_sos` / `cancel_sos` RPCs. If the backend is unreachable, the app
+falls back to sending the alert as an **SMS** to the selected contact via `expo-sms`
+(`src/services/smsService.ts`). A Postgres trigger fires `sos-fanout`, which pushes to the
+selected contacts **and** campus security, honouring each recipient's notification preferences.
 
 ### 8.4 Walk With Me — `src/services/journeyService.ts` + `src/services/geocodingService.ts`
 

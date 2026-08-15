@@ -14,13 +14,16 @@ export default function ContactCard({
   onToggleAutoShare,
   onRemove,
   onEdit,
+  onSetPrimary,
 }: {
   contact: TrustedContact;
   onToggleAutoShare: (v: boolean) => void;
   onRemove?: () => void;
   onEdit?: () => void;
+  onSetPrimary?: () => void;
 }) {
   const verified = contact.status === 'verified';
+  const isPrimary = contact.priority === 'primary';
   return (
     <View style={styles.card}>
       <View style={styles.avatar}>
@@ -41,6 +44,11 @@ export default function ContactCard({
           </Text>
         </View>
       </View>
+      {onSetPrimary ? (
+        <Pressable onPress={onSetPrimary} hitSlop={8} style={{ marginLeft: spacing.sm }}>
+          <Ionicons name={isPrimary ? 'star' : 'star-outline'} size={18} color={isPrimary ? colors.warning : colors.ink300} />
+        </Pressable>
+      ) : null}
       <Switch
         value={contact.autoShare}
         onValueChange={onToggleAutoShare}

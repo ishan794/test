@@ -38,6 +38,7 @@ Deno.serve(async (req) => {
       lng?: number | null;
       incident_type?: string;
       triggered_at?: string;
+      target_contact_ids?: string[] | null;
     } | null;
   } | null)?.record;
   if (!sos?.id || !sos.user_id) {
@@ -62,20 +63,35 @@ Deno.serve(async (req) => {
     .eq('id', sos.user_id)
     .single();
 
-  const { data: contacts } = await supabase
+  const { data: allContacts } = await supabase
     .from('trusted_contacts')
     .select('id, linked_uid, phone')
     .eq('user_id', sos.user_id);
 
-  const contactIds = (contacts ?? []).map((c) => c.id);
-  const linkedUids = (contacts ?? []).map((c) => c.linked_uid).filter((id): id is string => !!id);
-  const phones = (contacts ?? []).map((c) => c.phone).filter((p): p is string => !!p);
+  // Only notify the contacts selected for THIS SOS. An empty target list means
+  // "all auto-share contacts" (used by auto-SOS, which has no selection).
+  const targetIds = sos.target_contact_ids ?? [];
+  const contacts = targetIds.length
+    ? (allContacts ?? []).filter((c) => targetIds.includes(c.id))
+    : (allContacts ?? []);
+
+  const contactIds = contacts.map((c) => c.id);
+  const linkedUids = contacts.map((c) => c.linked_uid).filter((id): id is string => !!id);
+  const phones = contacts.map((c) => c.phone).filter((p): p is string => !!p);
 
   const tokens: string[] = [];
 
   if (linkedUids.length) {
-    const { data: linkedUsers } = await supabase.from('users').select('push_token').in('id', linkedUids);
-    for (const u of linkedUsers ?? []) if (u.push_token) tokens.push(u.push_token);
+    // Respect per-recipient notification preferences (sos on/off).
+    const { data: linkedUsers } = await supabase
+      .from('users')
+      .select('push_token, notification_prefs')
+      .in('id', linkedUids);
+    for (const u of linkedUsers ?? []) {
+      const prefs = (u.notification_prefs ?? {}) as Record<string, unknown>;
+      if (prefs.sos === false) continue;
+      if (u.push_token) tokens.push(u.push_token);
+    }
   }
   if (phones.length) {
     const { data: phoneUsers } = await supabase.from('users').select('push_token').in('phone', phones);
@@ -123,7 +139,11 @@ Deno.serve(async (req) => {
     if (!res.ok) console.error('Expo push send failed', res.status, await res.text());
   }
 
-  await supabase.from('sos_events').update({ notified_contact_ids: contactIds }).eq('id', sos.id);
+  // Mark the alert as sent so the lifecycle reads Active → Alert Sent → ….
+  await supabase
+    .from('sos_events')
+    .update({ notified_contact_ids: contactIds, alert_sent_at: new Date().toISOString() })
+    .eq('id', sos.id);
 
   return json({ notified: deduped.length });
 });

@@ -38,8 +38,16 @@ async function resolveContactTokens(
   const phones = contacts.map((c) => c.phone).filter((p): p is string => !!p);
 
   if (linkedUids.length) {
-    const { data: linkedUsers } = await supabase.from('users').select('push_token').in('id', linkedUids);
-    for (const u of linkedUsers ?? []) if (u.push_token) tokens.push(u.push_token);
+    // Respect per-recipient notification preferences (offline on/off).
+    const { data: linkedUsers } = await supabase
+      .from('users')
+      .select('push_token, notification_prefs')
+      .in('id', linkedUids);
+    for (const u of linkedUsers ?? []) {
+      const prefs = (u.notification_prefs ?? {}) as Record<string, unknown>;
+      if (prefs.offline === false) continue;
+      if (u.push_token) tokens.push(u.push_token);
+    }
   }
   if (phones.length) {
     const { data: phoneUsers } = await supabase.from('users').select('push_token').in('phone', phones);

@@ -42,6 +42,9 @@ function initials(name: string) {
 export default function MyAccountScreen({ navigation }: any) {
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [fullName, setFullName] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
 
   useEffect(() => {
     let channel: RealtimeChannel | null = null;
@@ -90,6 +93,33 @@ export default function MyAccountScreen({ navigation }: any) {
     // back to AuthNavigator (Login screen) the instant this resolves.
   };
 
+  const handleChangePassword = async () => {
+    if (!newPassword || !confirmPassword) {
+      Alert.alert('Missing info', 'Enter and confirm your new password.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      Alert.alert('Weak password', 'Use at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      Alert.alert('Passwords do not match', 'Please re-enter the same new password.');
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setNewPassword('');
+      setConfirmPassword('');
+      Alert.alert('Password updated', 'Your password has been changed.');
+    } catch (err: any) {
+      Alert.alert('Could not change password', err.message);
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ padding: spacing.xl, paddingBottom: spacing.huge }}>
       <ScreenHeader title="My Account" onBack={() => navigation.goBack()} />
@@ -117,6 +147,11 @@ export default function MyAccountScreen({ navigation }: any) {
 
           <Text style={styles.sectionTitle}>Full Name</Text>
           <Input value={fullName} onChangeText={setFullName} onBlur={saveName} icon="person-outline" />
+
+          <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Change Password</Text>
+          <Input value={newPassword} onChangeText={setNewPassword} placeholder="New password (min 8)" secureTextEntry icon="lock-closed-outline" />
+          <Input value={confirmPassword} onChangeText={setConfirmPassword} placeholder="Confirm new password" secureTextEntry icon="lock-closed-outline" />
+          <Button label={changingPassword ? 'Updating…' : 'Update Password'} onPress={handleChangePassword} loading={changingPassword} variant="dark" style={{ marginTop: spacing.md }} />
 
           <View style={{ marginTop: spacing.xl }}>
             <Button

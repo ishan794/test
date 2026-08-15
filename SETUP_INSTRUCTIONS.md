@@ -85,7 +85,8 @@ safeyou-campus/                     ← open this whole folder in VS Code
     │   ├── 0003_security_functions.sql  # trigger_sos/resolve_sos RPCs, moderation, rate limits
     │   ├── 0004_admin_functions.sql     # campus-security console RPCs (alerts, review)
     │   ├── 0005_auth_trigger.sql        # auto-provision users row on signup
-    │   └── 0006_flow_completion.sql     # SOS incident type, offline_events, heartbeat RPC
+    │   ├── 0006_flow_completion.sql     # SOS incident type, offline_events, heartbeat RPC
+    │   └── 0007_sos_selection.sql       # SOS contact selection, lifecycle, priority, SMS flag
     │
     └── functions/                  # Deno Edge Functions
         ├── _shared/auth.ts         # shared auth guards (webhook secret, fail-closed keys)
@@ -132,7 +133,7 @@ Install these once, in order:
 cd safeyou-campus
 supabase login
 supabase link --project-ref <your-project-ref>   # the xxxxxxxx from your Project URL
-supabase db push                                  # runs 0001–0006 migrations
+supabase db push                                  # runs 0001–0007 migrations
 ```
 
 This creates every table (`users`, `trusted_contacts`, `journeys`, `journey_pings`,

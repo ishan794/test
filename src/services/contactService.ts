@@ -39,6 +39,31 @@ export async function toggleAutoShare(contactId: string, value: boolean) {
   if (error) throw error;
 }
 
+export async function setContactPriority(contactId: string, priority: 'primary' | 'secondary') {
+  const { error } = await supabase.from('trusted_contacts').update({ priority }).eq('id', contactId);
+  if (error) throw error;
+}
+
+export async function setPrimaryContact(contactId: string) {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const uid = sessionData.session?.user.id;
+  if (!uid) throw new Error('Not authenticated');
+
+  // Clear any existing primary, then mark this one primary (single primary).
+  const { error: clearError } = await supabase
+    .from('trusted_contacts')
+    .update({ priority: 'secondary' })
+    .eq('user_id', uid)
+    .eq('priority', 'primary');
+  if (clearError) throw clearError;
+
+  const { error } = await supabase
+    .from('trusted_contacts')
+    .update({ priority: 'primary' })
+    .eq('id', contactId);
+  if (error) throw error;
+}
+
 export async function removeTrustedContact(contactId: string) {
   const { error } = await supabase.from('trusted_contacts').delete().eq('id', contactId);
   if (error) throw error;

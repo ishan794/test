@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, Pressable, Linking } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Pressable, Linking, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import supabase from '../../config/supabase';
@@ -8,8 +8,13 @@ import StatusBadge from '../../components/StatusBadge';
 import QuickActionGrid from '../../components/QuickActionGrid';
 import Card from '../../components/ui/Card';
 import Chip from '../../components/ui/Chip';
+import Button from '../../components/ui/Button';
+import { cancelSOS, resolveSOS } from '../../services/sosService';
 import { AppUser } from '../../types/user';
 import { colors, spacing, typography } from '../../theme';
+
+type SosContact = { id: string; name: string; phone: string | null; priority: 'primary' | 'secondary' };
+type ActiveSos = { id: string; status: string; incident_type: string; alert_sent_at: string | null };
 
 const SOS_TYPES = [
   { value: 'emergency', label: 'Emergency' },
@@ -54,6 +59,9 @@ function timeAgo(iso: unknown): string {
 export default function SOSDashboardScreen({ navigation }: any) {
   const [profile, setProfile] = useState<AppUser | null>(null);
   const [sosType, setSosType] = useState('emergency');
+  const [contacts, setContacts] = useState<SosContact[]>([]);
+  const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+  const [activeSos, setActiveSos] = useState<ActiveSos | null>(null);
 
   useEffect(() => {
     let channel: RealtimeChannel | null = null;
@@ -84,6 +92,82 @@ export default function SOSDashboardScreen({ navigation }: any) {
     };
   }, []);
 
+  useEffect(() => {
+    let sosChannel: RealtimeChannel | null = null;
+    let active = true;
+
+    const load = async () => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData.session?.user.id;
+      if (!uid || !active) return;
+
+      // Trusted contacts for the SOS selector.
+      const { data: contactRows } = await supabase
+        .from('trusted_contacts')
+        .select('id, name, phone, priority')
+        .eq('user_id', uid)
+        .order('added_at', { ascending: false });
+      if (active && contactRows) {
+        const list = contactRows.map((c) => ({
+          id: String(c.id),
+          name: String(c.name ?? ''),
+          phone: c.phone ? String(c.phone) : null,
+          priority: (c.priority as 'primary' | 'secondary') ?? 'secondary',
+        }));
+        setContacts(list);
+        setSelectedContactId((prev) => prev ?? (list.find((c) => c.priority === 'primary')?.id ?? list[0]?.id ?? null));
+      }
+
+      // Active SOS lifecycle subscription (Active → Alert Sent → Acknowledged → Resolved/Cancelled).
+      sosChannel = supabase
+        .channel(`active-sos-${uid}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'sos_events', filter: `user_id=eq.${uid}` }, (payload) => {
+          if (payload.eventType === 'DELETE') {
+            setActiveSos(null);
+            return;
+          }
+          const row = payload.new as Record<string, unknown>;
+          const status = String(row.status ?? '');
+          if (status === 'active' || status === 'acknowledged') {
+            setActiveSos({
+              id: String(row.id),
+              status,
+              incident_type: String(row.incident_type ?? 'emergency'),
+              alert_sent_at: row.alert_sent_at ? String(row.alert_sent_at) : null,
+            });
+          } else {
+            setActiveSos(null);
+          }
+        })
+        .subscribe();
+
+      const { data: openSos } = await supabase
+        .from('sos_events')
+        .select('id, status, incident_type, alert_sent_at')
+        .eq('user_id', uid)
+        .in('status', ['active', 'acknowledged'])
+        .order('triggered_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (active && openSos) {
+        setActiveSos({
+          id: String(openSos.id),
+          status: String(openSos.status),
+          incident_type: String(openSos.incident_type ?? 'emergency'),
+          alert_sent_at: openSos.alert_sent_at ? String(openSos.alert_sent_at) : null,
+        });
+      }
+    };
+    load();
+
+    return () => {
+      active = false;
+      if (sosChannel) supabase.removeChannel(sosChannel);
+    };
+  }, []);
+
+  const selectedContact = contacts.find((c) => c.id === selectedContactId) ?? null;
+
   const firstName = profile?.fullName?.split(' ')[0] || 'there';
 
   return (
@@ -98,9 +182,33 @@ export default function SOSDashboardScreen({ navigation }: any) {
 
       <Card style={styles.sosCard} elevated={false}>
         <Text style={styles.sosCardTitle}>In danger right now?</Text>
-        <Text style={styles.sosCardBody}>Hold the button below. Your live location and an alert go straight to your trusted contacts and campus security.</Text>
+        <Text style={styles.sosCardBody}>Hold the button below. Your live location and an alert go to your selected contact and campus security.</Text>
+
+        <Text style={styles.pickerLabel}>Notify</Text>
+        {contacts.length > 0 ? (
+          <View style={styles.contactRow}>
+            {contacts.map((c) => (
+              <Chip
+                key={c.id}
+                label={c.priority === 'primary' ? `${c.name} ★` : c.name}
+                active={selectedContactId === c.id}
+                onPress={() => setSelectedContactId(c.id)}
+                inverted
+              />
+            ))}
+          </View>
+        ) : (
+          <Text style={styles.noContactText}>No trusted contacts yet — add one in Settings so SOS has someone to alert.</Text>
+        )}
+
         <View style={styles.sosWrap}>
-          <SOSButton incidentType={sosType} />
+          <SOSButton
+            incidentType={sosType}
+            contactIds={selectedContact ? [selectedContact.id] : []}
+            contactPhone={selectedContact?.phone ?? undefined}
+            contactName={selectedContact?.name}
+            onSent={() => {}}
+          />
         </View>
         <View style={styles.sosTypeRow}>
           {SOS_TYPES.map((t) => (
@@ -108,6 +216,46 @@ export default function SOSDashboardScreen({ navigation }: any) {
           ))}
         </View>
       </Card>
+
+      {activeSos && (
+        <Card style={styles.activeSosCard} elevated={false}>
+          <View style={styles.activeSosHeader}>
+            <Ionicons name="radio" size={18} color={colors.danger} />
+            <Text style={styles.activeSosTitle}>SOS {activeSos.status === 'acknowledged' ? 'Acknowledged' : 'Active'}</Text>
+          </View>
+          <Text style={styles.activeSosBody}>
+            Type: {activeSos.incident_type} · {activeSos.alert_sent_at ? `Alert sent ${timeAgo(activeSos.alert_sent_at)}` : 'Sending…'}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+            <Button
+              label="Resolve"
+              variant="dark"
+              fullWidth={false}
+              style={{ flex: 1, paddingVertical: 10 }}
+              onPress={async () => {
+                try {
+                  await resolveSOS(activeSos.id);
+                } catch (err: any) {
+                  Alert.alert('Could not resolve', err.message ?? '');
+                }
+              }}
+            />
+            <Button
+              label="Cancel"
+              variant="outline"
+              fullWidth={false}
+              style={{ flex: 1, paddingVertical: 10 }}
+              onPress={async () => {
+                try {
+                  await cancelSOS(activeSos.id);
+                } catch (err: any) {
+                  Alert.alert('Could not cancel', err.message ?? '');
+                }
+              }}
+            />
+          </View>
+        </Card>
+      )}
 
       <Text style={styles.sectionTitle}>Quick Emergency Contacts</Text>
       <QuickActionGrid
@@ -164,7 +312,14 @@ const styles = StyleSheet.create({
   sosCardTitle: { color: colors.white, fontSize: 17, fontWeight: '800', marginBottom: 6 },
   sosCardBody: { color: colors.ink300, fontSize: 13, textAlign: 'center', lineHeight: 19, marginBottom: spacing.xl, paddingHorizontal: spacing.md },
   sosWrap: { alignItems: 'center' },
+  pickerLabel: { ...typography.overline, color: colors.ink300, marginBottom: spacing.sm, marginTop: spacing.lg },
+  contactRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm, marginBottom: spacing.xl, paddingHorizontal: spacing.md },
+  noContactText: { color: colors.ink300, fontSize: 12.5, textAlign: 'center', marginBottom: spacing.xl, paddingHorizontal: spacing.lg },
   sosTypeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.xl, paddingHorizontal: spacing.md },
+  activeSosCard: { borderColor: colors.danger, borderWidth: 1, marginBottom: spacing.xl },
+  activeSosHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  activeSosTitle: { ...typography.bodyStrong, color: colors.danger },
+  activeSosBody: { ...typography.caption, textTransform: 'capitalize' },
   sectionTitle: { ...typography.overline, marginBottom: spacing.md, marginTop: spacing.xl },
   toolRow: { flexDirection: 'row', alignItems: 'center' },
 });

@@ -11,6 +11,7 @@ export default function PrivacySecurityScreen({ navigation }: any) {
   const [autoSosOnFall, setAutoSosOnFall] = useState(true);
   const [silentAlertMode, setSilentAlertMode] = useState(false);
   const [smartOfflineDetection, setSmartOfflineDetection] = useState(true);
+  const [smsFallback, setSmsFallback] = useState(false);
 
   useEffect(() => {
     let channel: RealtimeChannel | null = null;
@@ -27,6 +28,7 @@ export default function PrivacySecurityScreen({ navigation }: any) {
           const data = payload.new as Record<string, unknown>;
           setAutoSosOnFall(Boolean(data.auto_sos_on_fall ?? true));
           setSilentAlertMode(Boolean(data.silent_alert_mode ?? false));
+          setSmsFallback(Boolean(data.sms_fallback_enabled ?? false));
         })
         .subscribe();
 
@@ -34,6 +36,7 @@ export default function PrivacySecurityScreen({ navigation }: any) {
       if (active && data) {
         setAutoSosOnFall(Boolean(data.auto_sos_on_fall ?? true));
         setSilentAlertMode(Boolean(data.silent_alert_mode ?? false));
+        setSmsFallback(Boolean(data.sms_fallback_enabled ?? false));
       }
     };
     load();
@@ -50,7 +53,7 @@ export default function PrivacySecurityScreen({ navigation }: any) {
     if (!uid) return;
     // smartOfflineDetection has no dedicated column in the users table — the
     // toggle is kept client-side; autoSosOnFall/silentAlertMode persist below.
-    const columns: Record<string, string> = { autoSosOnFall: 'auto_sos_on_fall', silentAlertMode: 'silent_alert_mode' };
+    const columns: Record<string, string> = { autoSosOnFall: 'auto_sos_on_fall', silentAlertMode: 'silent_alert_mode', smsFallback: 'sms_fallback_enabled' };
     const column = columns[field];
     if (!column) return;
     await supabase.from('users').update({ [column]: value }).eq('id', uid);
@@ -82,6 +85,13 @@ export default function PrivacySecurityScreen({ navigation }: any) {
           body="Sends SOS without sound or visible screen alerts"
           value={silentAlertMode}
           onChange={(v) => { setSilentAlertMode(v); update('silentAlertMode', v); }}
+        />
+        <SettingRow
+          icon="phone-portrait-outline"
+          title="Emergency SMS fallback"
+          body="If the network is unavailable, send the SOS as a text message to the selected contact"
+          value={smsFallback}
+          onChange={(v) => { setSmsFallback(v); update('smsFallback', v); }}
           last
         />
       </Card>
