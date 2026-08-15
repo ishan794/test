@@ -105,8 +105,9 @@ export async function getJourneysSharedWithMe() {
   if (journeyError) throw journeyError;
 
   const ownerIds = [...new Set((journeys ?? []).map((j) => j.user_id))];
+  // Read owner names through the safe_users projection (users is now owner-only).
   const { data: owners } = ownerIds.length
-    ? await supabase.from('users').select('id, full_name').in('id', ownerIds)
+    ? await supabase.from('safe_users').select('id, full_name').in('id', ownerIds)
     : { data: [] as { id: string; full_name: string }[] };
 
   return (journeys ?? []).map((j) => ({

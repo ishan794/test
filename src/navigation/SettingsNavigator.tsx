@@ -8,6 +8,7 @@ import NotificationSettingsScreen from '../screens/settings/NotificationSettings
 import LocationSettingsScreen from '../screens/settings/LocationSettingsScreen';
 import DeleteAccountScreen from '../screens/settings/DeleteAccountScreen';
 import MyReportsScreen from '../screens/reporting/MyReportsScreen';
+import CampusSecurityScreen from '../screens/admin/CampusSecurityScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -22,6 +23,7 @@ export default function SettingsNavigator() {
       <Stack.Screen name="LocationSettings" component={LocationSettingsScreen} />
       <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} />
       <Stack.Screen name="MyReports" component={MyReportsScreen} />
+      <Stack.Screen name="CampusSecurity" component={CampusSecurityScreen} />
     </Stack.Navigator>
   );
 }

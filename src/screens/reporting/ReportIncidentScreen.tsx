@@ -43,7 +43,7 @@ export default function ReportIncidentScreen() {
         anonymous,
         mediaUris,
       );
-      Alert.alert('Report submitted', 'Campus security has been notified.');
+      Alert.alert('Report submitted', 'Your report was recorded and will be reviewed by campus security.');
       setDescription('');
       setMediaUris([]);
     } catch (err: any) {

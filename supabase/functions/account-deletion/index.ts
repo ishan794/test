@@ -2,7 +2,8 @@ import { createClient } from 'npm:@supabase/supabase-js';
 
 const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
 const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+// Fail closed: never fall back to the anon key for privileged work.
+const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
 function corsHeaders(): Record<string, string> {
   return {
@@ -30,6 +31,13 @@ Deno.serve(async (req) => {
     });
   }
   const uid = user.id;
+
+  if (!serviceRoleKey) {
+    return new Response(JSON.stringify({ error: 'SUPABASE_SERVICE_ROLE_KEY is not configured' }), {
+      status: 500,
+      headers: { ...corsHeaders(), 'Content-Type': 'application/json' },
+    });
+  }
 
   const admin = createClient(supabaseUrl, serviceRoleKey);
 

@@ -3,6 +3,10 @@ import supabase from '../config/supabase';
 import * as Location from 'expo-location';
 import { ensureLocationPermission } from '../utils/permissions';
 
+// SOS is created and resolved through the trigger_sos / resolve_sos RPCs, which
+// run the insert + status update in a single DB transaction and enforce a
+// per-user cooldown server-side (so a client can't spam SOS or leave stale state).
+
 export async function triggerSOS() {
   const { data: sessionData } = await supabase.auth.getSession();
   const uid = sessionData.session?.user.id;
@@ -13,41 +17,17 @@ export async function triggerSOS() {
 
   const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
 
-  const { data, error } = await supabase
-    .from('sos_events')
-    .insert({
-      user_id: uid,
-      triggered_at: new Date().toISOString(),
-      lat: loc.coords.latitude,
-      lng: loc.coords.longitude,
-      status: 'active',
-      notified_contact_ids: [],
-      source: 'manual',
-    })
-    .select('id')
-    .single();
+  const { data, error } = await supabase.rpc('trigger_sos', {
+    p_lat: loc.coords.latitude,
+    p_lng: loc.coords.longitude,
+    p_source: 'manual',
+  });
   if (error) throw error;
 
-  const { error: userError } = await supabase.from('users').update({ current_status: 'sos' }).eq('id', uid);
-  if (userError) throw userError;
-
-  return data.id;
-  // The sos-fanout Edge Function listens for INSERT on sos_events (via a
-  // Postgres webhook) and notifies trusted contacts + campus security.
+  return data as string;
 }
 
 export async function resolveSOS(eventId: string) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const uid = sessionData.session?.user.id;
-  if (!uid) throw new Error('Not authenticated');
-
-  const { error } = await supabase
-    .from('sos_events')
-    .update({ status: 'resolved', resolved_at: new Date().toISOString() })
-    .eq('id', eventId)
-    .eq('user_id', uid);
+  const { error } = await supabase.rpc('resolve_sos', { p_event_id: eventId });
   if (error) throw error;
-
-  const { error: userError } = await supabase.from('users').update({ current_status: 'safe' }).eq('id', uid);
-  if (userError) throw userError;
 }
