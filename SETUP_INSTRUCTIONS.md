@@ -6,6 +6,9 @@ Supabase Postgres database, real Supabase Auth sessions, and real Supabase Stora
 **Stack:** Expo (React Native) frontend + Supabase (Postgres, Auth, Storage, Realtime, Edge
 Functions) backend. There is no separate Node/Firebase backend to run — Supabase *is* the backend.
 
+> For the complete, screen-by-screen architecture, data model, RLS, and Edge Function reference,
+> see **[IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)**.
+
 ---
 
 ## Full File Structure
@@ -80,7 +83,8 @@ safeyou-campus/                     ← open this whole folder in VS Code
     │   ├── 0001_init.sql           # tables + trusted-graph RLS + webhook triggers
     │   ├── 0002_cron.sql           # schedules offline-detection every 2 minutes
     │   ├── 0003_security_functions.sql  # trigger_sos/resolve_sos RPCs, moderation, rate limits
-    │   └── 0004_admin_functions.sql     # campus-security console RPCs (alerts, review)
+    │   ├── 0004_admin_functions.sql     # campus-security console RPCs (alerts, review)
+    │   └── 0005_auth_trigger.sql        # auto-provision users row on signup
     │
     └── functions/                  # Deno Edge Functions
         ├── _shared/auth.ts         # shared auth guards (webhook secret, fail-closed keys)
