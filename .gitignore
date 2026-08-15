@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+dist/
+
+*.log
+backend/node_modules/
+backend/lib/
+serviceAccountKey.json
+
+.env
+.env.local
+
+android/
+ios/

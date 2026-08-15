@@ -1,0 +1,71 @@
+{
+  "expo": {
+    "name": "SafeYou-Campus",
+    "slug": "safeyou-campus",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.safeyoucampus.app",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification",
+          "location",
+          "fetch",
+          "remote-notification"
+        ],
+        "NSLocationWhenInUseUsageDescription": "SafeYou-Campus needs your location to keep you safe during journeys and SOS alerts.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "SafeYou-Campus needs background location so trusted contacts can find you even if the app is closed.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.safeyoucampus.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0F172A"
+      },
+      "predictiveBackGestureEnabled": true
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#0F172A"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "SafeYou-Campus needs your location to keep you safe."
+        }
+      ],
+      "expo-asset",
+      "expo-font",
+      "expo-background-task",
+      "expo-audio"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c94d50c1-e695-4a1e-91cf-e30473d61198"
+      }
+    }
+  }
+}
