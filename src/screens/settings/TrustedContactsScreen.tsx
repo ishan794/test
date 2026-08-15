@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, StyleSheet, Alert } from 'react-native';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import supabase from '../../config/supabase';
-import { addTrustedContact, toggleAutoShare, removeTrustedContact } from '../../services/contactService';
+import { addTrustedContact, toggleAutoShare, removeTrustedContact, updateTrustedContact } from '../../services/contactService';
 import ContactCard from '../../components/ContactCard';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
@@ -33,6 +33,8 @@ export default function TrustedContactsScreen({ navigation }: any) {
   const [phone, setPhone] = useState('');
   const [relationship, setRelationship] = useState('');
   const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let channel: RealtimeChannel | null = null;
@@ -105,6 +107,41 @@ export default function TrustedContactsScreen({ navigation }: any) {
     }
   };
 
+  const startEdit = (c: TrustedContact) => {
+    setEditingId(c.id);
+    setName(c.name);
+    setPhone(c.phone);
+    setRelationship(c.relationship);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setName('');
+    setPhone('');
+    setRelationship('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+    if (!name || !phone) {
+      Alert.alert('Missing info', 'Enter a name and phone number.');
+      return;
+    }
+    if (!isValidPhone(phone)) {
+      Alert.alert('Invalid phone', 'Enter a valid phone number, e.g. +94771234567.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateTrustedContact(editingId, { name, phone, relationship: relationship || 'Contact' });
+      cancelEdit();
+    } catch (err: any) {
+      Alert.alert('Could not save contact', err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleRemove = (id: string, contactName: string) => {
     Alert.alert('Remove contact?', `${contactName} will stop receiving your SOS and journey alerts.`, [
       { text: 'Cancel', style: 'cancel' },
@@ -133,12 +170,19 @@ export default function TrustedContactsScreen({ navigation }: any) {
         <View style={{ marginBottom: spacing.xl }}>
           <ScreenHeader title="Trusted Contacts" subtitle={`${contacts.length} of ${MAX_CONTACTS} added`} onBack={() => navigation.goBack()} />
           <Card>
-            <Text style={styles.formTitle}>Add a contact</Text>
+            <Text style={styles.formTitle}>{editingId ? 'Edit contact' : 'Add a contact'}</Text>
             <Input placeholder="Name" value={name} onChangeText={setName} />
             <Input placeholder="Phone (+94...)" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
             <Input placeholder="Relationship (e.g. Mom, Roommate)" value={relationship} onChangeText={setRelationship} style={{ marginBottom: 0 }} />
             <View style={{ marginTop: spacing.lg }}>
-              <Button label={adding ? 'Adding…' : 'Add Contact'} onPress={handleAdd} loading={adding} variant="dark" />
+              {editingId ? (
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  <Button label="Cancel" onPress={cancelEdit} variant="outline" fullWidth={false} style={{ flex: 1 }} />
+                  <Button label={saving ? 'Saving…' : 'Save'} onPress={handleSaveEdit} loading={saving} variant="dark" fullWidth={false} style={{ flex: 1 }} />
+                </View>
+              ) : (
+                <Button label={adding ? 'Adding…' : 'Add Contact'} onPress={handleAdd} loading={adding} variant="dark" />
+              )}
             </View>
           </Card>
         </View>
@@ -147,6 +191,7 @@ export default function TrustedContactsScreen({ navigation }: any) {
         <ContactCard
           contact={item}
           onToggleAutoShare={(v) => toggleAutoShare(item.id, v)}
+          onEdit={() => startEdit(item)}
           onRemove={() => handleRemove(item.id, item.name)}
         />
       )}

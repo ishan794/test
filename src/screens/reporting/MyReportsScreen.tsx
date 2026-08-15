@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import { View, Text, FlatList, StyleSheet, Pressable, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import supabase from '../../config/supabase';
+import { deleteIncident } from '../../services/incidentService';
 import { Incident, IncidentStatus } from '../../types/incident';
 import ScreenHeader from '../../components/ui/ScreenHeader';
 import EmptyState from '../../components/ui/EmptyState';
@@ -26,6 +27,7 @@ const STATUS_META: Record<IncidentStatus, { color: string; bg: string; icon: key
   submitted: { color: colors.warning, bg: colors.warningLight, icon: 'time-outline' },
   'under-review': { color: colors.primaryDark, bg: colors.primaryLight, icon: 'eye-outline' },
   resolved: { color: colors.success, bg: colors.successLight, icon: 'checkmark-circle-outline' },
+  rejected: { color: colors.danger, bg: colors.dangerLight, icon: 'close-circle-outline' },
 };
 
 export default function MyReportsScreen({ navigation }: any) {
@@ -70,6 +72,24 @@ export default function MyReportsScreen({ navigation }: any) {
     };
   }, []);
 
+  const handleDelete = (id: string) => {
+    Alert.alert('Delete report?', 'This will remove the report from your list.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteIncident(id);
+            setReports((prev) => prev.filter((r) => r.id !== id));
+          } catch (err: any) {
+            Alert.alert('Could not delete', err.message ?? '');
+          }
+        },
+      },
+    ]);
+  };
+
   return (
     <FlatList
       style={styles.container}
@@ -89,6 +109,11 @@ export default function MyReportsScreen({ navigation }: any) {
               <Text style={styles.desc} numberOfLines={2}>{item.description}</Text>
             </View>
             <Text style={[styles.status, { color: meta.color }]}>{item.status.replace('-', ' ')}</Text>
+            {(item.status === 'submitted' || item.status === 'rejected') && (
+              <Pressable onPress={() => handleDelete(item.id)} hitSlop={8} style={{ marginLeft: spacing.sm }}>
+                <Ionicons name="trash-outline" size={17} color={colors.ink300} />
+              </Pressable>
+            )}
           </View>
         );
       }}

@@ -13,10 +13,12 @@ export default function ContactCard({
   contact,
   onToggleAutoShare,
   onRemove,
+  onEdit,
 }: {
   contact: TrustedContact;
   onToggleAutoShare: (v: boolean) => void;
   onRemove?: () => void;
+  onEdit?: () => void;
 }) {
   const verified = contact.status === 'verified';
   return (
@@ -45,6 +47,11 @@ export default function ContactCard({
         trackColor={{ false: colors.ink100, true: colors.primaryLight }}
         thumbColor={contact.autoShare ? colors.primary : '#FFFFFF'}
       />
+      {onEdit ? (
+        <Pressable onPress={onEdit} hitSlop={8} style={{ marginLeft: spacing.sm }}>
+          <Ionicons name="create-outline" size={17} color={colors.ink300} />
+        </Pressable>
+      ) : null}
       {onRemove ? (
         <Pressable onPress={onRemove} hitSlop={8} style={{ marginLeft: spacing.sm }}>
           <Ionicons name="trash-outline" size={18} color={colors.ink300} />

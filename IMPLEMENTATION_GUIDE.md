@@ -163,7 +163,8 @@ safeyou-campus/                     ◄── open THIS in VS Code
     │   ├── 0002_cron.sql           # pg_cron schedule for offline-detection
     │   ├── 0003_security_functions.sql  # trigger_sos/resolve_sos, moderation, rate limits
     │   ├── 0004_admin_functions.sql     # campus-security console RPCs
-    │   └── 0005_auth_trigger.sql        # auto-provision users row on signup
+    │   ├── 0005_auth_trigger.sql        # auto-provision users row on signup
+    │   └── 0006_flow_completion.sql     # SOS incident type, offline_events, heartbeat RPC
     └── functions/                  # Deno Edge Functions
         ├── _shared/auth.ts         # webhook-secret guard + fail-closed key helpers
         ├── sos-fanout/             # onCreate(sos_events) → notify contacts + security
@@ -222,7 +223,8 @@ location are never exposed across users.
 | `trusted_contacts` | `user_id` → contact (name, phone, `linked_uid`, `is_system_contact`) | owner writes; owner / linked user / security reads |
 | `journeys` | Walk-With-Me trip (dest, ETA, `auto_sos_at`, `shared_with_contact_ids`) | owner / shared contacts / security read; owner insert/update |
 | `journey_pings` | breadcrumb trail (`journey_id`, lat/lng, speed) | viewers read; **only the journey owner inserts** |
-| `sos_events` | SOS record | owner/security read; **no client insert/update** — go through `trigger_sos`/`resolve_sos` |
+| `sos_events` | SOS record (incl. `incident_type`) | owner/security read; **no client insert/update** — go through `trigger_sos`/`resolve_sos` |
+| `offline_events` | persisted offline detection (location + last active time) | owner/security read; service_role write |
 | `incidents` | report (`reporter_id`, `is_anonymous`, type, desc, media) | reporter/security read; insert scoped to reporter (or null for anon) + rate limit |
 | `risk_zones` | aggregated heatmap (`center_lat/lng`, `radius_meters`, `risk_score`, `incident_count`) | public read; service_role write |
 | `webhook_events` | idempotency dedup for `pg_net` retries | no client access |

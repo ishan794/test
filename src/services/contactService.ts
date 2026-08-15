@@ -23,6 +23,17 @@ export async function addTrustedContact(name: string, phone: string, relationshi
   return data;
 }
 
+export async function updateTrustedContact(
+  contactId: string,
+  updates: { name?: string; phone?: string; relationship?: string },
+) {
+  const { error } = await supabase
+    .from('trusted_contacts')
+    .update(updates)
+    .eq('id', contactId);
+  if (error) throw error;
+}
+
 export async function toggleAutoShare(contactId: string, value: boolean) {
   const { error } = await supabase.from('trusted_contacts').update({ auto_share: value }).eq('id', contactId);
   if (error) throw error;

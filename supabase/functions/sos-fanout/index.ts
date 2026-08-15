@@ -30,7 +30,16 @@ Deno.serve(async (req) => {
     return json({ error: 'invalid json' }, 400);
   }
 
-  const sos = (payload as { record?: { id?: string; user_id?: string; lat?: number | null; lng?: number | null } } | null)?.record;
+  const sos = (payload as {
+    record?: {
+      id?: string;
+      user_id?: string;
+      lat?: number | null;
+      lng?: number | null;
+      incident_type?: string;
+      triggered_at?: string;
+    } | null;
+  } | null)?.record;
   if (!sos?.id || !sos.user_id) {
     return json({ error: 'no record' }, 400);
   }
@@ -49,7 +58,7 @@ Deno.serve(async (req) => {
 
   const { data: user } = await supabase
     .from('users')
-    .select('full_name')
+    .select('full_name, phone, student_id, university')
     .eq('id', sos.user_id)
     .single();
 
@@ -82,6 +91,8 @@ Deno.serve(async (req) => {
   for (const u of securityUsers ?? []) if (u.push_token) tokens.push(u.push_token);
 
   const deduped = [...new Set(tokens.filter(Boolean))];
+  const incidentType = sos.incident_type ?? 'emergency';
+  const triggeredAt = sos.triggered_at ? new Date(sos.triggered_at).toLocaleString() : 'now';
 
   if (deduped.length) {
     const res = await fetch('https://exp.host/--/api/v2/push/send', {
@@ -91,11 +102,16 @@ Deno.serve(async (req) => {
         deduped.map((to) => ({
           to,
           title: `🚨 SOS ALERT from ${user?.full_name ?? 'a student'}`,
-          body: 'Tap to see their live location immediately.',
+          body: `${incidentType} at ${triggeredAt}. Tap to see their live location.`,
           data: {
             type: 'sos',
             eventId: sos.id,
             userId: sos.user_id,
+            incidentType,
+            triggeredAt: sos.triggered_at ?? '',
+            fullName: user?.full_name ?? '',
+            phone: user?.phone ?? '',
+            studentId: user?.student_id ?? '',
             lat: String(sos.lat ?? ''),
             lng: String(sos.lng ?? ''),
           },

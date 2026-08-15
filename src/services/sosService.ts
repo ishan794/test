@@ -7,7 +7,7 @@ import { ensureLocationPermission } from '../utils/permissions';
 // run the insert + status update in a single DB transaction and enforce a
 // per-user cooldown server-side (so a client can't spam SOS or leave stale state).
 
-export async function triggerSOS() {
+export async function triggerSOS(incidentType = 'emergency') {
   const { data: sessionData } = await supabase.auth.getSession();
   const uid = sessionData.session?.user.id;
   if (!uid) throw new Error('Not authenticated');
@@ -21,6 +21,7 @@ export async function triggerSOS() {
     p_lat: loc.coords.latitude,
     p_lng: loc.coords.longitude,
     p_source: 'manual',
+    p_incident_type: incidentType,
   });
   if (error) throw error;
 

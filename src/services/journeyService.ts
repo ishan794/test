@@ -1,4 +1,17 @@
 import supabase from '../config/supabase';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const ACTIVE_JOURNEY_KEY = 'safeyou-active-journey-id';
+
+/** Persist the active journey id so the background heartbeat can keep pinging it. */
+export async function setActiveJourneyId(id: string | null) {
+  if (id) await AsyncStorage.setItem(ACTIVE_JOURNEY_KEY, id);
+  else await AsyncStorage.removeItem(ACTIVE_JOURNEY_KEY);
+}
+
+export async function getActiveJourneyId(): Promise<string | null> {
+  return AsyncStorage.getItem(ACTIVE_JOURNEY_KEY);
+}
 
 export async function startJourney(
   destinationName: string,
@@ -36,6 +49,7 @@ export async function startJourney(
     .single();
   if (error) throw error;
 
+  await setActiveJourneyId(data.id);
   return data.id;
 }
 
@@ -45,6 +59,7 @@ export async function endJourney(journeyId: string) {
     .update({ status: 'completed', ended_at: new Date().toISOString() })
     .eq('id', journeyId);
   if (error) throw error;
+  await setActiveJourneyId(null);
 }
 
 // Called repeatedly (e.g. every 15-30s) while a journey is active. Writes a

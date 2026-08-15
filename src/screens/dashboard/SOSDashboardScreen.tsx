@@ -7,8 +7,18 @@ import SOSButton from '../../components/SOSButton';
 import StatusBadge from '../../components/StatusBadge';
 import QuickActionGrid from '../../components/QuickActionGrid';
 import Card from '../../components/ui/Card';
+import Chip from '../../components/ui/Chip';
 import { AppUser } from '../../types/user';
 import { colors, spacing, typography } from '../../theme';
+
+const SOS_TYPES = [
+  { value: 'emergency', label: 'Emergency' },
+  { value: 'medical', label: 'Medical' },
+  { value: 'harassment', label: 'Harassment' },
+  { value: 'stalking', label: 'Stalking' },
+  { value: 'unsafe-area', label: 'Unsafe area' },
+  { value: 'other', label: 'Other' },
+];
 
 function toAppUser(row: Record<string, unknown>): AppUser {
   return {
@@ -43,6 +53,7 @@ function timeAgo(iso: unknown): string {
 
 export default function SOSDashboardScreen({ navigation }: any) {
   const [profile, setProfile] = useState<AppUser | null>(null);
+  const [sosType, setSosType] = useState('emergency');
 
   useEffect(() => {
     let channel: RealtimeChannel | null = null;
@@ -89,7 +100,12 @@ export default function SOSDashboardScreen({ navigation }: any) {
         <Text style={styles.sosCardTitle}>In danger right now?</Text>
         <Text style={styles.sosCardBody}>Hold the button below. Your live location and an alert go straight to your trusted contacts and campus security.</Text>
         <View style={styles.sosWrap}>
-          <SOSButton />
+          <SOSButton incidentType={sosType} />
+        </View>
+        <View style={styles.sosTypeRow}>
+          {SOS_TYPES.map((t) => (
+            <Chip key={t.value} label={t.label} active={sosType === t.value} onPress={() => setSosType(t.value)} inverted />
+          ))}
         </View>
       </Card>
 
@@ -148,6 +164,7 @@ const styles = StyleSheet.create({
   sosCardTitle: { color: colors.white, fontSize: 17, fontWeight: '800', marginBottom: 6 },
   sosCardBody: { color: colors.ink300, fontSize: 13, textAlign: 'center', lineHeight: 19, marginBottom: spacing.xl, paddingHorizontal: spacing.md },
   sosWrap: { alignItems: 'center' },
+  sosTypeRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm, marginTop: spacing.xl, paddingHorizontal: spacing.md },
   sectionTitle: { ...typography.overline, marginBottom: spacing.md, marginTop: spacing.xl },
   toolRow: { flexDirection: 'row', alignItems: 'center' },
 });

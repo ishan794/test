@@ -84,7 +84,8 @@ safeyou-campus/                     ← open this whole folder in VS Code
     │   ├── 0002_cron.sql           # schedules offline-detection every 2 minutes
     │   ├── 0003_security_functions.sql  # trigger_sos/resolve_sos RPCs, moderation, rate limits
     │   ├── 0004_admin_functions.sql     # campus-security console RPCs (alerts, review)
-    │   └── 0005_auth_trigger.sql        # auto-provision users row on signup
+    │   ├── 0005_auth_trigger.sql        # auto-provision users row on signup
+    │   └── 0006_flow_completion.sql     # SOS incident type, offline_events, heartbeat RPC
     │
     └── functions/                  # Deno Edge Functions
         ├── _shared/auth.ts         # shared auth guards (webhook secret, fail-closed keys)
@@ -131,7 +132,7 @@ Install these once, in order:
 cd safeyou-campus
 supabase login
 supabase link --project-ref <your-project-ref>   # the xxxxxxxx from your Project URL
-supabase db push                                  # runs 0001–0004 migrations
+supabase db push                                  # runs 0001–0006 migrations
 ```
 
 This creates every table (`users`, `trusted_contacts`, `journeys`, `journey_pings`,
@@ -245,6 +246,13 @@ instead of hand-editing individual `expo-*` versions.
 
 ## Notes on what changed in this update
 
+- **End-to-end safety flow wired up** (the big one): SOS now carries an incident type, the
+  per-minute heartbeat goes through an atomic `heartbeat` RPC that also auto-recovers
+  `offline-suspected → safe`, offline detection persists real `offline_events` rows (with last
+  known location + last active time) and notifies contacts, SOS/offline pushes carry full
+  details (incident type, time, location, user info), Walk With Me keeps writing breadcrumbs from
+  the background heartbeat (not just the foreground watcher), trusted contacts can now be
+  edited, and users can delete their own incident reports.
 - **Walk With Me uses real destinations:** the destination is geocoded (OpenStreetMap
   Nominatim by default, override with `EXPO_PUBLIC_GEOCODING_ENDPOINT`) and the ETA is computed
   from walking distance instead of the previous fabricated `loc + 0.01°` offset and hardcoded

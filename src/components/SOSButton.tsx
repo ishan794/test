@@ -7,7 +7,7 @@ import { colors, radius } from '../theme';
 const HOLD_MS = 3000;
 const SIZE = 208;
 
-export default function SOSButton() {
+export default function SOSButton({ incidentType = 'emergency' }: { incidentType?: string }) {
   const [holding, setHolding] = useState(false);
   const [sending, setSending] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -33,7 +33,7 @@ export default function SOSButton() {
       setHolding(false);
       setSending(true);
       try {
-        await triggerSOS();
+        await triggerSOS(incidentType);
       } catch (err: any) {
         Alert.alert('SOS failed to send', err.message ?? 'Please try again or call campus security directly.');
       } finally {

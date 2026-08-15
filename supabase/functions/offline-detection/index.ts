@@ -112,23 +112,39 @@ Deno.serve(async (req) => {
       const lastActiveMs = new Date(user.last_active_at).getTime();
 
       if (now - lastActiveMs > OFFLINE_THRESHOLD_MS && user.current_status !== 'offline-suspected') {
+        const lastActiveIso = new Date(lastActiveMs).toISOString();
+        const minutesAgo = Math.round((now - lastActiveMs) / 60000);
+
+        // Persist the offline event (owner + campus security can read it).
         await supabase.from('users').update({ current_status: 'offline-suspected' }).eq('id', user.id);
 
         const { data: contacts } = await supabase
           .from('trusted_contacts')
-          .select('linked_uid, phone')
+          .select('id, linked_uid, phone')
           .eq('user_id', user.id)
           .eq('auto_share', true);
+        const contactIds = (contacts ?? []).map((c) => c.id);
+
+        await supabase.from('offline_events').insert({
+          user_id: user.id,
+          last_known_lat: user.last_known_lat ?? null,
+          last_known_lng: user.last_known_lng ?? null,
+          last_active_at: lastActiveIso,
+          detected_at: new Date(now).toISOString(),
+          notified_contact_ids: contactIds,
+        });
 
         const tokens = await resolveContactTokens(supabase, contacts ?? []);
         if (tokens.length) {
           await sendExpoPush(
             tokens,
-            `${user.full_name || 'A contact'} may need help`,
-            `Last seen ${Math.round((now - lastActiveMs) / 60000)} min ago near their journey route.`,
+            `${user.full_name || 'A contact'} went offline`,
+            `No check-in for ${minutesAgo} min. Last seen ${lastActiveIso ? new Date(lastActiveIso).toLocaleTimeString() : 'unknown'} near their journey route.`,
             {
               type: 'offline-alert',
               userId: user.id,
+              status: 'offline-suspected',
+              lastActiveAt: lastActiveIso,
               lat: String(user.last_known_lat ?? ''),
               lng: String(user.last_known_lng ?? ''),
             },
