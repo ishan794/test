@@ -1,5 +1,5 @@
 export type IncidentType = 'harassment' | 'stalking' | 'ragging' | 'unsafe-area' | 'hazard' | 'other';
-export type IncidentStatus = 'submitted' | 'under-review' | 'resolved';
+export type IncidentStatus = 'submitted' | 'under-review' | 'resolved' | 'rejected';
 
 export interface Incident {
   id: string;

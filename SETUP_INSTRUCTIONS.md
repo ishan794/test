@@ -6,6 +6,9 @@ Supabase Postgres database, real Supabase Auth sessions, and real Supabase Stora
 **Stack:** Expo (React Native) frontend + Supabase (Postgres, Auth, Storage, Realtime, Edge
 Functions) backend. There is no separate Node/Firebase backend to run — Supabase *is* the backend.
 
+> For the complete, screen-by-screen architecture, data model, RLS, and Edge Function reference,
+> see **[IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md)**.
+
 ---
 
 ## Full File Structure
@@ -40,9 +43,11 @@ safeyou-campus/                     ← open this whole folder in VS Code
 │   │   ├── authService.ts          # signUp / login / logout
 │   │   ├── contactService.ts       # add / remove / toggle trusted contacts
 │   │   ├── journeyService.ts       # start / end Walk-With-Me journeys
+│   │   ├── geocodingService.ts     # destination → coordinates + walking ETA
 │   │   ├── locationService.ts      # 60s background location heartbeat
 │   │   ├── incidentService.ts      # submit incident + upload photo evidence
 │   │   ├── sosService.ts           # trigger / resolve SOS
+│   │   ├── adminService.ts         # campus-security console data layer
 │   │   └── notificationService.ts  # register Expo push token
 │   │
 │   ├── store/                      # useAuthStore.ts, useAppStore.ts (Zustand)
@@ -59,6 +64,7 @@ safeyou-campus/                     ← open this whole folder in VS Code
 │   │   ├── dashboard/SOSDashboardScreen.tsx
 │   │   ├── tracking/WalkWithMeScreen.tsx
 │   │   ├── reporting/              # ReportIncidentScreen, MyReportsScreen
+│   │   ├── admin/CampusSecurityScreen.tsx   # security console (role-gated)
 │   │   ├── map/CampusHeatmapScreen.tsx
 │   │   └── settings/               # SettingsHomeScreen, MyAccountScreen,
 │   │                                #   TrustedContactsScreen, PrivacySecurityScreen
@@ -74,13 +80,19 @@ safeyou-campus/                     ← open this whole folder in VS Code
 │
 └── supabase/                       # BACKEND — this is the real backend
     ├── migrations/
-    │   ├── 0001_init.sql           # every table + Row Level Security policy
-    │   └── 0002_cron.sql           # schedules offline-detection every 2 minutes
+    │   ├── 0001_init.sql           # tables + trusted-graph RLS + webhook triggers
+    │   ├── 0002_cron.sql           # schedules offline-detection every 2 minutes
+    │   ├── 0003_security_functions.sql  # trigger_sos/resolve_sos RPCs, moderation, rate limits
+    │   ├── 0004_admin_functions.sql     # campus-security console RPCs (alerts, review)
+    │   ├── 0005_auth_trigger.sql        # auto-provision users row on signup
+    │   ├── 0006_flow_completion.sql     # SOS incident type, offline_events, heartbeat RPC
+    │   └── 0007_sos_selection.sql       # SOS contact selection, lifecycle, priority, SMS flag
     │
     └── functions/                  # Deno Edge Functions
-        ├── sos-fanout/             # fires on new sos_events row → notifies contacts
-        ├── offline-detection/      # cron: flags users who've gone silent
-        ├── incident-moderation/    # rolls incidents into risk_zones for the heatmap
+        ├── _shared/auth.ts         # shared auth guards (webhook secret, fail-closed keys)
+        ├── sos-fanout/             # fires on new sos_events row → notifies contacts + security
+        ├── offline-detection/      # cron: flags users who've gone silent (with recovery)
+        ├── incident-moderation/    # moderate + roll incidents into risk_zones for the heatmap
         └── account-deletion/       # cascade-deletes a user's real data on request
 ```
 
@@ -121,12 +133,20 @@ Install these once, in order:
 cd safeyou-campus
 supabase login
 supabase link --project-ref <your-project-ref>   # the xxxxxxxx from your Project URL
-supabase db push                                  # runs 0001_init.sql and 0002_cron.sql
+supabase db push                                  # runs 0001–0007 migrations
 ```
 
 This creates every table (`users`, `trusted_contacts`, `journeys`, `journey_pings`,
-`sos_events`, `incidents`, `risk_zones`) with Row Level Security already enabled and correct
-policies — nobody can read or write another user's private data.
+`sos_events`, `incidents`, `risk_zones`) with Row Level Security enabled and a trusted-graph
+model: a user can read only their own profile and the minimal (`safe_users`) projection of
+people in their mutual trusted-contact graph. `push_token`, `phone`, `email` and live location
+are never exposed across users, and only the service role can read `push_token`.
+
+To start over from a clean slate (destroys data):
+
+```bash
+supabase db reset
+```
 
 > `0002_cron.sql` schedules the offline-detection function via `pg_cron`/`pg_net`. If your
 > project doesn't have the `pg_cron` extension available on your plan, you can skip that file
@@ -138,7 +158,7 @@ policies — nobody can read or write another user's private data.
 **Dashboard → Storage → New bucket** → name it exactly `incident-evidence` → set to **Public**
 (so `getPublicUrl()` in `incidentService.ts` works) → Create.
 
-## Step 4 — Deploy the Edge Functions
+## Step 4 — Deploy the Edge Functions and set the webhook secret
 
 ```bash
 supabase functions deploy sos-fanout
@@ -147,14 +167,30 @@ supabase functions deploy incident-moderation
 supabase functions deploy account-deletion
 ```
 
-Then wire the database webhook so `sos-fanout` actually fires when someone hits SOS:
-**Dashboard → Database → Webhooks → Create a new hook**
-- Table: `sos_events`, Events: `INSERT`
-- Type: **HTTP Request** → URL: your deployed `sos-fanout` function URL
-- Headers: `Authorization: Bearer <your anon key>`, `Content-Type: application/json`
+The `sos-fanout`, `offline-detection` and `incident-moderation` functions are **server-to-server
+only**. They are invoked by the database triggers / cron scheduler defined in the migrations
+(no dashboard webhook to wire) and authenticate with a shared secret — never the public anon
+key. Configure that secret on both sides so they match:
 
-(`incident-moderation` can be wired the same way against `INSERT` on `incidents` if you want
-new reports to immediately affect the heatmap; otherwise it can run as a scheduled job too.)
+1. In the Supabase dashboard, open **Database → Vault → Secrets** and create two secrets:
+   - `safeyou-functions-url` → your function host, e.g. `https://<project-ref>.supabase.co`
+   - `safeyou-webhook-secret` → a long random string (e.g. `openssl rand -hex 32`)
+2. Set the same random string as a function secret:
+   ```bash
+   supabase secrets set WEBHOOK_SECRET=<the same random string>
+   ```
+
+The functions **fail closed**: if `WEBHOOK_SECRET` (or `SUPABASE_SERVICE_ROLE_KEY`) is missing,
+they refuse to run rather than falling back to the anon key. `account-deletion` is called by the
+logged-in app and instead verifies the caller's JWT via `auth.getUser()`.
+
+> **Campus security.** Promote staff accounts to the security console by setting
+> `role = 'campus_security'` on their `users` row (Table Editor → users). SOS fan-out notifies
+> these users' push tokens, and their role can read `incidents`, `sos_events`, `journeys` and
+> `safe_users` for review. On the app, a "Campus Security" entry appears under **Settings** for
+> these accounts, opening a console with a live alert feed (active SOS + offline-suspected users)
+> and incident review. The console's actions (`admin_resolve_sos`, `admin_set_incident_status`,
+> etc. in `0004_admin_functions.sql`) reject any caller who is not campus security.
 
 ## Step 5 — Configure the frontend
 
@@ -166,6 +202,8 @@ Edit `.env`:
 ```
 SUPABASE_URL=https://your-project-ref.supabase.co
 SUPABASE_ANON_KEY=your-anon-public-key
+# optional — override the destination geocoder (defaults to OpenStreetMap Nominatim)
+# EXPO_PUBLIC_GEOCODING_ENDPOINT=https://your-geocoder.example/search
 ```
 
 > **Important:** `SUPABASE_URL` must be the bare project URL — no `/rest/v1` or any path
@@ -200,8 +238,8 @@ instead of hand-editing individual `expo-*` versions.
 4. **Settings → Trusted Contacts** → add a contact → confirm the row appears instantly in
    **Table Editor → trusted_contacts** (Realtime subscription working both ways).
 5. Hold the SOS button for 3 seconds → confirm a row appears in **sos_events**, `users.current_status`
-   flips to `sos`, and (once the webhook in Step 4 is wired) the `sos-fanout` function logs a
-   run under **Edge Functions → sos-fanout → Logs**.
+   flips to `sos`, and (with the Step 4 secret configured) the `sos-fanout` function logs a run
+   under **Edge Functions → sos-fanout → Logs**.
 6. **Report an incident** → confirm the row appears in **incidents** and, if you added a photo,
    the file appears in **Storage → incident-evidence**.
 
@@ -209,6 +247,26 @@ instead of hand-editing individual `expo-*` versions.
 
 ## Notes on what changed in this update
 
+- **End-to-end safety flow wired up** (the big one): SOS now carries an incident type, the
+  per-minute heartbeat goes through an atomic `heartbeat` RPC that also auto-recovers
+  `offline-suspected → safe`, offline detection persists real `offline_events` rows (with last
+  known location + last active time) and notifies contacts, SOS/offline pushes carry full
+  details (incident type, time, location, user info), Walk With Me keeps writing breadcrumbs from
+  the background heartbeat (not just the foreground watcher), trusted contacts can now be
+  edited, and users can delete their own incident reports.
+- **Walk With Me uses real destinations:** the destination is geocoded (OpenStreetMap
+  Nominatim by default, override with `EXPO_PUBLIC_GEOCODING_ENDPOINT`) and the ETA is computed
+  from walking distance instead of the previous fabricated `loc + 0.01°` offset and hardcoded
+  12/15-minute values.
+- **Campus security console:** a role-gated "Campus Security" screen (live SOS/offline alerts +
+  incident review) backed by `0004_admin_functions.sql`, shown only to `campus_security` users.
+- **Security hardening:** replaced the blanket `using (true)` RLS policies with a
+  trusted-graph model (owner-only `users`, a `safe_users` projection for cross-user reads,
+  owner-scoped writes, and a server-side incident rate limit). Edge Functions now verify a
+  shared webhook secret (server-to-server) or the caller JWT (`account-deletion`), fail closed
+  when keys/secrets are missing, and never fall back to the anon key. SOS is created/resolved
+  atomically through `trigger_sos`/`resolve_sos` RPCs with a 30s cooldown. `pg_net` is no
+  longer usable by anon/authenticated.
 - Added a full design system (`src/theme/`) and reusable UI primitives
   (`src/components/ui/`) — every screen was restyled on top of it. No backend logic changed.
 - Added `SettingsNavigator.tsx` + `SettingsHomeScreen.tsx`: the Trusted Contacts, My Account,

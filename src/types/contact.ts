@@ -6,4 +6,5 @@ export interface TrustedContact {
   autoShare: boolean;
   status: 'verified' | 'pending';
   isSystemContact: boolean;
+  priority: 'primary' | 'secondary';
 }

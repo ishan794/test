@@ -6,14 +6,22 @@ export default function Chip({
   label,
   active,
   onPress,
+  inverted = false,
 }: {
   label: string;
   active?: boolean;
   onPress?: () => void;
+  /** Render for dark surfaces (e.g. the SOS card). */
+  inverted?: boolean;
 }) {
   return (
-    <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
-      <Text style={[styles.text, active && styles.textActive]}>{label}</Text>
+    <Pressable
+      onPress={onPress}
+      style={[styles.chip, inverted && styles.chipInverted, active && styles.chipActive, active && inverted && styles.chipActiveInverted]}
+    >
+      <Text style={[styles.text, inverted && styles.textInverted, active && styles.textActive, active && inverted && styles.textActiveInverted]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -27,10 +35,20 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     paddingHorizontal: spacing.lg,
   },
+  chipInverted: {
+    borderColor: 'rgba(255,255,255,0.25)',
+    backgroundColor: 'transparent',
+  },
   chipActive: {
     backgroundColor: colors.ink,
     borderColor: colors.ink,
   },
+  chipActiveInverted: {
+    backgroundColor: colors.white,
+    borderColor: colors.white,
+  },
   text: { fontSize: 13, fontWeight: '600', color: colors.ink600, textTransform: 'capitalize' },
+  textInverted: { color: colors.ink200 },
   textActive: { color: colors.white },
+  textActiveInverted: { color: colors.ink },
 });

@@ -2,6 +2,7 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import supabase from '../config/supabase';
 import { ensureLocationPermission } from '../utils/permissions';
+import { getActiveJourneyId } from './journeyService';
 
 const LOCATION_TASK = 'safeyou-location-heartbeat';
 
@@ -16,12 +17,34 @@ TaskManager.defineTask(LOCATION_TASK, async ({ data, error }) => {
     const uid = sessionData.session?.user.id;
     if (!uid) return;
 
-    await supabase.from('users').update({
-      last_known_lat: loc.coords.latitude,
-      last_known_lng: loc.coords.longitude,
-      last_known_accuracy: loc.coords.accuracy ?? null,
-      last_active_at: new Date().toISOString(),
-    }).eq('id', uid);
+    const lat = loc.coords.latitude;
+    const lng = loc.coords.longitude;
+
+    // Atomic heartbeat: updates location + last_active_at every minute and
+    // auto-recovers 'offline-suspected' → 'safe' on a fresh beat.
+    await supabase.rpc('heartbeat', {
+      p_lat: lat,
+      p_lng: lng,
+      p_accuracy: loc.coords.accuracy ?? null,
+    });
+
+    // If a Walk With Me journey is active, keep writing breadcrumbs so trusted
+    // contacts can follow the trail even while the app is backgrounded.
+    const journeyId = await getActiveJourneyId();
+    if (journeyId) {
+      const now = new Date().toISOString();
+      await supabase.from('journey_pings').insert({
+        journey_id: journeyId,
+        lat,
+        lng,
+        speed: loc.coords.speed ?? null,
+      });
+      await supabase.from('journeys').update({
+        last_ping_lat: lat,
+        last_ping_lng: lng,
+        last_ping_at: now,
+      }).eq('id', journeyId);
+    }
   } catch (err) {
     console.warn('Location heartbeat update failed', err);
   }

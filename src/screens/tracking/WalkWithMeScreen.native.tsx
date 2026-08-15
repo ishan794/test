@@ -4,6 +4,7 @@ import MapView from 'react-native-maps';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { startJourney, endJourney, recordJourneyPing, getMyTrustedContacts } from '../../services/journeyService';
+import { geocodeDestination, estimateEtaMinutes } from '../../services/geocodingService';
 import { useAppStore } from '../../store/useAppStore';
 import { ensureLocationPermission } from '../../utils/permissions';
 import Input from '../../components/ui/Input';
@@ -20,6 +21,7 @@ export default function WalkWithMeScreen({ navigation }: any) {
   const [starting, setStarting] = useState(false);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [etaMinutes, setEtaMinutes] = useState<number | null>(null);
   const { activeJourneyId, setActiveJourneyId } = useAppStore();
   const watchRef = useRef<Location.LocationSubscription | null>(null);
 
@@ -68,17 +70,24 @@ export default function WalkWithMeScreen({ navigation }: any) {
       const granted = await ensureLocationPermission();
       if (!granted) return;
       const loc = await Location.getCurrentPositionAsync({});
-      // In production, resolve `destination` text to real coordinates via a
-      // Places Autocomplete API before calling startJourney.
+      const start = { lat: loc.coords.latitude, lng: loc.coords.longitude };
+
+      // Resolve the destination name to real coordinates and derive a real ETA
+      // instead of the previous fabricated offset + hardcoded 12/15 min values.
+      const dest = await geocodeDestination(destination);
+      const eta = estimateEtaMinutes(start, dest);
+      const safetyTimer = eta + 5; // 5-minute buffer after the expected arrival
+
       const id = await startJourney(
         destination,
-        { lat: loc.coords.latitude + 0.01, lng: loc.coords.longitude + 0.01 },
-        { lat: loc.coords.latitude, lng: loc.coords.longitude },
-        12,
-        15,
+        dest,
+        start,
+        eta,
+        safetyTimer,
         selectedIds,
       );
       setActiveJourneyId(id);
+      setEtaMinutes(eta);
     } catch (err: any) {
       Alert.alert('Could not start journey', err.message);
     } finally {
@@ -92,6 +101,7 @@ export default function WalkWithMeScreen({ navigation }: any) {
       setActiveJourneyId(null);
       setDestination('');
       setSelectedIds([]);
+      setEtaMinutes(null);
     }
   };
 
@@ -150,7 +160,9 @@ export default function WalkWithMeScreen({ navigation }: any) {
               <Ionicons name="navigate-circle" size={24} color={colors.primaryDark} />
               <View style={{ marginLeft: spacing.sm, flex: 1 }}>
                 <Text style={typography.bodyStrong}>Heading to {destination || 'destination'}</Text>
-                <Text style={typography.caption}>Safety timer active · ETA 12 min</Text>
+                <Text style={typography.caption}>
+                  Safety timer active{etaMinutes != null ? ` · ETA ${etaMinutes} min` : ''}
+                </Text>
               </View>
             </View>
             <Button label="End Journey" onPress={handleEnd} variant="danger" />

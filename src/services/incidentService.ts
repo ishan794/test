@@ -44,3 +44,8 @@ export async function submitIncident(
   });
   if (error) throw error;
 }
+
+export async function deleteIncident(id: string) {
+  const { error } = await supabase.from('incidents').delete().eq('id', id);
+  if (error) throw error;
+}

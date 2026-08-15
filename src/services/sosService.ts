@@ -2,52 +2,71 @@
 import supabase from '../config/supabase';
 import * as Location from 'expo-location';
 import { ensureLocationPermission } from '../utils/permissions';
+import { sendSosSms } from './smsService';
 
-export async function triggerSOS() {
+// SOS is created and resolved through the trigger_sos / resolve_sos / cancel_sos
+// / acknowledge_sos RPCs, which run inside single DB transactions and enforce a
+// per-user cooldown server-side (so a client can't spam SOS or leave stale state).
+
+export interface TriggerSosResult {
+  eventId: string | null;
+  smsSent: boolean;
+}
+
+function isNetworkError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /fetch failed|failed to fetch|network request failed|network error|ECONNREFUSED|timeout|offline/i.test(msg);
+}
+
+export async function triggerSOS(
+  incidentType = 'emergency',
+  contactIds: string[] = [],
+  contactPhone?: string,
+): Promise<TriggerSosResult> {
   const { data: sessionData } = await supabase.auth.getSession();
-  const uid = sessionData.session?.user.id;
-  if (!uid) throw new Error('Not authenticated');
+  const user = sessionData.session?.user;
+  if (!user) throw new Error('Not authenticated');
 
   const granted = await ensureLocationPermission();
   if (!granted) throw new Error('Location permission is required to send SOS.');
 
   const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+  const lat = loc.coords.latitude;
+  const lng = loc.coords.longitude;
 
-  const { data, error } = await supabase
-    .from('sos_events')
-    .insert({
-      user_id: uid,
-      triggered_at: new Date().toISOString(),
-      lat: loc.coords.latitude,
-      lng: loc.coords.longitude,
-      status: 'active',
-      notified_contact_ids: [],
-      source: 'manual',
-    })
-    .select('id')
-    .single();
-  if (error) throw error;
-
-  const { error: userError } = await supabase.from('users').update({ current_status: 'sos' }).eq('id', uid);
-  if (userError) throw userError;
-
-  return data.id;
-  // The sos-fanout Edge Function listens for INSERT on sos_events (via a
-  // Postgres webhook) and notifies trusted contacts + campus security.
+  try {
+    const { data, error } = await supabase.rpc('trigger_sos', {
+      p_lat: lat,
+      p_lng: lng,
+      p_source: 'manual',
+      p_incident_type: incidentType,
+      p_contact_ids: contactIds.length ? contactIds : null,
+    });
+    if (error) throw error;
+    return { eventId: data as string, smsSent: false };
+  } catch (err) {
+    // SMS fallback: if the backend is unreachable and we have a selected
+    // contact's phone number, still alert them via the device's SMS app.
+    if (isNetworkError(err) && contactPhone) {
+      const name = (user.user_metadata?.full_name as string) ?? 'A student';
+      const sent = await sendSosSms(contactPhone, { name, incidentType, lat, lng });
+      return { eventId: null, smsSent: sent };
+    }
+    throw err;
+  }
 }
 
 export async function resolveSOS(eventId: string) {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const uid = sessionData.session?.user.id;
-  if (!uid) throw new Error('Not authenticated');
-
-  const { error } = await supabase
-    .from('sos_events')
-    .update({ status: 'resolved', resolved_at: new Date().toISOString() })
-    .eq('id', eventId)
-    .eq('user_id', uid);
+  const { error } = await supabase.rpc('resolve_sos', { p_event_id: eventId });
   if (error) throw error;
+}
 
-  const { error: userError } = await supabase.from('users').update({ current_status: 'safe' }).eq('id', uid);
-  if (userError) throw userError;
+export async function cancelSOS(eventId: string) {
+  const { error } = await supabase.rpc('cancel_sos', { p_event_id: eventId });
+  if (error) throw error;
+}
+
+export async function acknowledgeSOS(eventId: string) {
+  const { error } = await supabase.rpc('acknowledge_sos', { p_event_id: eventId });
+  if (error) throw error;
 }
